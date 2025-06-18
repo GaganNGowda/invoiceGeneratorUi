@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   // For production (GitHub Pages project site), it's the repository name.
   // For development, it's the root path ("/").
   const isProduction = mode === "production";
-  const base_path = isProduction ? "/invoice-bot-ui-spark/" : "/"; // **CRITICAL:** Replace 'invoice-bot-ui-spark' with your exact repository name
+  const base_path = "/";
 
   return {
     // The 'base' property is crucial for GitHub Pages project sites.
