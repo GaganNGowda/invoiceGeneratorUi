@@ -14,8 +14,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       {/* NEW: Add basename to BrowserRouter */}
-      <BrowserRouter>
-        {" "}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         {/* Adjust this to your repository name */}
         <Routes>
           <Route path="/" element={<Index />} />
