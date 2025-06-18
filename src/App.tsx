@@ -14,7 +14,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       {/* NEW: Add basename to BrowserRouter */}
-      <BrowserRouter basename="/invoice-bot-ui-spark/">
+      <BrowserRouter>
         {" "}
         {/* Adjust this to your repository name */}
         <Routes>
