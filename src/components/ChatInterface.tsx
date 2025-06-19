@@ -1,31 +1,45 @@
 import { useState, useRef, useEffect } from "react";
-import ChatMessage from "./ChatMessage";
-import ChatInput from "./ChatInput";
+// Corrected import paths to use the configured path alias '@/'
+// Assuming ChatMessage.tsx and ChatInput.tsx are located directly under 'src/components/'
+import ChatMessage from "@/components/ChatMessage";
+import ChatInput from "@/components/ChatInput";
 import { useToast } from "@/hooks/use-toast";
 import {
   sendChatMessageToBot,
-  uploadFileToBackend,
-  downloadInvoicePdfFrontend,
+  // Removed direct uploadFileToBackend here as we'll use a specific OCR one
+  downloadInvoicePdfFrontend, // Keep if still needed for direct download action
+  uploadImageForOcr, // New import for OCR specific upload
 } from "@/api/zohoService";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
 import React from "react";
 
+// Define the message interface for consistent structure
 interface Message {
   id: string;
-  text: React.ReactNode;
+  text: React.ReactNode; // Can be string or JSX for rich content
   isBot: boolean;
   timestamp: string;
 }
 
+// Define the conversation context interface for state management
 interface ConversationContext {
   status?: string;
   next_field?: string;
   customer_data?: { [key: string]: string };
   invoice_data?: { [key: string]: any };
+  all_available_items?: any[]; // Added for consistency with backend context
+  current_item_id?: string;
+  current_item_name?: string;
+  invoice_collection_sub_status?: string;
+  return_flow?: string;
+  return_phone?: string;
+  return_invoice_data?: { [key: string]: any };
+  extracted_contact_info?: { [key: string]: any }; // Added for clarity on frontend context
 }
 
 const ChatInterface = () => {
+  // Initial message displayed when the chat starts or is reset
   const initialBotMessage: Message = {
     id: "1",
     text: "Hello! I'm your Invoice Generator AI assistant. I can help you create, analyze, and manage invoices. How can I assist you today?",
@@ -36,28 +50,39 @@ const ChatInterface = () => {
     }),
   };
 
+  // State to manage chat messages
   const [messages, setMessages] = useState<Message[]>([initialBotMessage]);
+  // State to indicate if the bot is "typing" (processing a response)
   const [isTyping, setIsTyping] = useState(false);
+  // Ref for scrolling messages into view
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Toast hook for notifications
   const { toast } = useToast();
 
+  // State to maintain conversation context (e.g., current step in a multi-turn flow)
   const [conversationContext, setConversationContext] =
     useState<ConversationContext>({});
+  // Unique session ID for the conversation (can be dynamic for multi-user apps)
   const SESSION_ID = "my_unique_chat_session";
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
+  // Effect to scroll to the bottom of the chat when new messages are added
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+  // Helper function to scroll to the bottom of the chat window
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // Helper function to add a new message to the chat state
   const addMessage = (message: Message) => {
     setMessages((prev) => [...prev, message]);
   };
 
+  // Handles sending user text messages to the backend
   const handleSendMessage = async (messageText: string) => {
+    // Add user's message to the chat
     addMessage({
       id: Date.now().toString(),
       text: messageText,
@@ -67,18 +92,21 @@ const ChatInterface = () => {
         minute: "2-digit",
       }),
     });
-    setIsTyping(true);
+    setIsTyping(true); // Show typing indicator
 
     try {
+      // Send message to the backend's main conversational endpoint
       const backendResponse = await sendChatMessageToBot(
         messageText,
         SESSION_ID,
-        conversationContext
+        conversationContext // Pass current conversation context
       );
 
+      // Update conversation context based on backend's response
       if (backendResponse.context) {
         setConversationContext(backendResponse.context);
       } else {
+        // If context is not returned, clear it for specific actions indicating flow completion
         if (
           backendResponse.action === "customer_created" ||
           backendResponse.action === "customer_exists" ||
@@ -86,15 +114,17 @@ const ChatInterface = () => {
           backendResponse.action === "reset_success" ||
           backendResponse.action === "invoice_created" ||
           backendResponse.action === "invoice_creation_failed" ||
-          backendResponse.action === "invoice_creation_error"
+          backendResponse.action === "invoice_creation_error" ||
+          backendResponse.action === "list_items" // Clearing context after listing items
         ) {
-          setConversationContext({});
+          setConversationContext({}); // Clear context to start fresh
         }
       }
 
       let botResponseText: React.ReactNode =
         "I'm not sure how to respond to that.";
 
+      // Handle different actions from the backend
       switch (backendResponse.action) {
         case "general_response":
           botResponseText = backendResponse.message;
@@ -105,7 +135,7 @@ const ChatInterface = () => {
         case "ask_question":
           botResponseText = backendResponse.message;
           break;
-        case "request_invoice_info":
+        case "request_invoice_info": // This action might not be explicitly returned by the backend logic, but keep for robustness
           botResponseText = backendResponse.message;
           break;
         case "customer_created":
@@ -137,7 +167,7 @@ const ChatInterface = () => {
           });
           break;
         case "invoice_created":
-          // Construct message with clickable link for download
+          // Construct message with clickable link for PDF download
           if (backendResponse.invoice_id && backendResponse.pdf_url) {
             botResponseText = (
               <>
@@ -149,8 +179,7 @@ const ChatInterface = () => {
                   download={`invoice_${backendResponse.invoice_id}.pdf`}
                   className="text-blue-500 hover:text-blue-700 underline cursor-pointer"
                   onClick={(e) => {
-                    // This onClick will primarily serve to show the toast,
-                    // the href+download attribute will handle the actual download.
+                    // This onClick is for user feedback, actual download is by href+download
                     toast({
                       title: "Initiating Download",
                       description: `Invoice PDF for ${backendResponse.invoice_id} should start downloading.`,
@@ -183,23 +212,22 @@ const ChatInterface = () => {
           break;
         case "reset_success":
           botResponseText = backendResponse.message || "Chat has been reset.";
-          setMessages([initialBotMessage]);
+          setMessages([initialBotMessage]); // Clear all messages and show initial bot message
           break;
-        case "file_uploaded":
+        case "file_uploaded": // This action is typically from /upload-document, not /process-ocr
+          // This case might be less relevant now if all image uploads go through OCR
           botResponseText =
             backendResponse.message || `File uploaded successfully.`;
           if (backendResponse.extracted_data) {
-            botResponseText += `\nExtracted data: ${JSON.stringify(
+            botResponseText += `\nExtracted data: \n\`\`\`json\n${JSON.stringify(
               backendResponse.extracted_data,
               null,
               2
-            )}`;
+            )}\n\`\`\``;
           }
           toast({
             title: "File Uploaded",
-            description: `File '${
-              messageText.split("📎 Uploaded: ")[1] || "document"
-            }' processed.`,
+            description: `File processed.`,
           });
           break;
         case "error":
@@ -221,6 +249,7 @@ const ChatInterface = () => {
           }`;
       }
 
+      // Add bot's response to the chat
       addMessage({
         id: (Date.now() + 1).toString(),
         text: botResponseText,
@@ -230,79 +259,84 @@ const ChatInterface = () => {
           minute: "2-digit",
         }),
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error communicating with backend:", error);
       addMessage({
         id: Date.now().toString(),
-        text: "❌ Failed to connect to backend or process request. Please check console for details.",
+        text: `❌ Failed to connect to backend or process request: ${
+          error.message || "Unknown error"
+        }. Please check console for details.`,
         isBot: true,
         timestamp: new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         }),
       });
-      setConversationContext({});
+      setConversationContext({}); // Clear context on communication error
     } finally {
-      setIsTyping(false);
+      setIsTyping(false); // Hide typing indicator
     }
   };
 
+  // Handles file uploads, specifically for OCR processing
   const handleFileUpload = async (file: File) => {
+    // Add user's "uploading" message to chat
     addMessage({
       id: Date.now().toString(),
-      text: `📎 Uploaded: ${file.name}`,
+      text: `📎 Uploading and processing: ${file.name}...`,
       isBot: false,
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
     });
-    setIsTyping(true);
+    setIsTyping(true); // Show typing indicator
 
     try {
-      const uploadResult = await uploadFileToBackend(file);
+      // Call the new OCR specific upload function
+      const ocrResult = await uploadImageForOcr(file);
 
-      let botResponseText = "";
-      if (uploadResult.status === "success") {
-        botResponseText = `I've received your file "${
-          file.name
-        }"! Backend says: ${uploadResult.message || "Processing complete."}`;
-        if (uploadResult.extracted_data) {
-          botResponseText += `\nExtracted data: \n\`\`\`json\n${JSON.stringify(
-            uploadResult.extracted_data,
-            null,
-            2
-          )}\n\`\`\``;
-        }
-        toast({
-          title: "File Uploaded",
-          description: `${file.name} successfully uploaded.`,
+      if (ocrResult.text) {
+        // Step 1: Add the extracted text as a "bot" message initially,
+        // then immediately process it as if the user sent it.
+        // This gives feedback that text was extracted.
+        addMessage({
+          id: (Date.now() + 1).toString(),
+          text: `🤖 Extracted from image: "${ocrResult.text}"`,
+          isBot: true, // Display as bot message
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
         });
+
+        // Step 2: Now, "send" this extracted text as if the user typed it.
+        // This will trigger the main conversational flow in handleSendMessage.
+        // Pass the extracted text to handleSendMessage.
+        // We need to delay this slightly to ensure the "extracted from image" message renders first.
+        // A direct call might process too fast.
+        setTimeout(() => {
+          handleSendMessage(ocrResult.text);
+        }, 100); // Small delay to allow UI to update
       } else {
-        botResponseText = `❌ Failed to process file "${file.name}": ${
-          uploadResult.message || "Unknown error."
-        }`;
-        toast({
-          title: "File Upload Failed",
-          description: botResponseText,
-          variant: "destructive",
+        // If no text was extracted, inform the user
+        addMessage({
+          id: (Date.now() + 1).toString(),
+          text: `❌ No text could be extracted from "${file.name}". Please try another image or type your request.`,
+          isBot: true,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
         });
       }
-
+    } catch (error: any) {
+      console.error("Error processing OCR:", error);
       addMessage({
         id: (Date.now() + 1).toString(),
-        text: botResponseText,
-        isBot: true,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      });
-    } catch (error) {
-      console.error("Error uploading file to backend:", error);
-      addMessage({
-        id: Date.now().toString(),
-        text: "❌ Failed to upload file to backend. Please try again or check console.",
+        text: `❌ Failed to perform OCR on "${file.name}": ${
+          error.message || "Unknown error"
+        }. Please ensure Tesseract/Poppler are installed on the backend.`,
         isBot: true,
         timestamp: new Date().toLocaleTimeString([], {
           hour: "2-digit",
@@ -310,39 +344,44 @@ const ChatInterface = () => {
         }),
       });
     } finally {
-      setIsTyping(false);
+      setIsTyping(false); // Hide typing indicator
     }
   };
 
+  // Handles resetting the chat conversation
   const handleResetChat = async () => {
-    setIsTyping(true);
+    setIsTyping(true); // Show typing indicator
     try {
+      // Send a special command to the backend to reset its session state
       const backendResponse = await sendChatMessageToBot(
         "reset_conversation_command",
         SESSION_ID,
-        {}
+        {} // No context needed for reset command
       );
 
+      // Check if backend confirmed reset
       if (backendResponse.action === "reset_success") {
-        setMessages([initialBotMessage]);
-        setConversationContext({});
+        setMessages([initialBotMessage]); // Clear all messages except initial bot message
+        setConversationContext({}); // Clear frontend context
         toast({
           title: "Chat Reset",
           description:
             backendResponse.message || "Conversation successfully reset.",
         });
       } else {
+        // If backend reset failed, still clear frontend for a fresh start
         toast({
           title: "Reset Failed",
           description:
             backendResponse.message ||
-            "Failed to reset conversation on the backend.",
+            "Failed to reset conversation on the backend. Clearing local chat.",
           variant: "destructive",
         });
         setMessages([initialBotMessage]);
         setConversationContext({});
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Handle network or other errors during reset attempt
       console.error("Error resetting chat with backend:", error);
       toast({
         title: "Reset Error",
@@ -350,10 +389,10 @@ const ChatInterface = () => {
           "Could not communicate with backend to reset. Local chat cleared.",
         variant: "destructive",
       });
-      setMessages([initialBotMessage]);
-      setConversationContext({});
+      setMessages([initialBotMessage]); // Clear local chat
+      setConversationContext({}); // Clear local context
     } finally {
-      setIsTyping(false);
+      setIsTyping(false); // Hide typing indicator
     }
   };
 
@@ -434,7 +473,7 @@ const ChatInterface = () => {
       {/* Chat Input - Fixed at bottom */}
       <ChatInput
         onSendMessage={handleSendMessage}
-        onFileUpload={handleFileUpload}
+        onFileUpload={handleFileUpload} // Ensure ChatInput passes the file directly
         disabled={isTyping}
       />
     </div>

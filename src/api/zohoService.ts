@@ -1,6 +1,6 @@
 // src/api/zohoService.ts
 
-const BACKEND_BASE_URL = "http://localhost:8000"; // Ensure this matches your backend's URL and port
+const BACKEND_BASE_URL = "https://invoice-generator-4zyo.onrender.com"; // Ensure this matches your backend's URL and port
 
 interface CustomerPayload {
   contact_name: string;
@@ -59,12 +59,14 @@ export const sendChatMessageToBot = async (
     }),
   });
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const errorBody = await response.text();
+    console.error("Chat API error response:", errorBody);
+    throw new Error(`HTTP error! status: ${response.status} - ${errorBody}`);
   }
   return await response.json();
 };
 
-// Function to upload files
+// Function to upload files (e.g., for general document storage, not specifically OCR)
 export const uploadFileToBackend = async (file: File) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -75,9 +77,41 @@ export const uploadFileToBackend = async (file: File) => {
   });
 
   if (!response.ok) {
-    throw new Error(`File upload failed! status: ${response.status}`);
+    const errorBody = await response.text();
+    console.error("File upload API error response:", errorBody);
+    throw new Error(
+      `File upload failed! status: ${response.status} - ${errorBody}`
+    );
   }
   return await response.json();
+};
+
+/**
+ * NEW FUNCTION: Uploads an image file to the backend for OCR processing.
+ * This function specifically targets the /process-ocr endpoint.
+ * @param file The image file to upload.
+ * @returns A promise that resolves to the JSON response from the backend,
+ * expected to contain the 'text' extracted by OCR.
+ */
+export const uploadImageForOcr = async (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file); // 'file' matches the FastAPI UploadFile parameter name
+
+  const response = await fetch(`${BACKEND_BASE_URL}/process-ocr`, {
+    // Target the specific OCR endpoint
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    // Attempt to read error message from response body if available
+    const errorBody = await response.text();
+    console.error("OCR API error response:", errorBody);
+    throw new Error(
+      `Failed to upload image for OCR: ${response.status} ${response.statusText} - ${errorBody}`
+    );
+  }
+  return await response.json(); // Expected: { "text": "extracted text" }
 };
 
 // Function to download invoice PDF from the backend and trigger client download
@@ -125,8 +159,10 @@ export const createCustomer = async (customerPayload: CustomerPayload) => {
     body: JSON.stringify(customerPayload),
   });
   if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Create customer API error response:", errorBody);
     throw new Error(
-      `Failed to create/find customer! status: ${response.status}`
+      `Failed to create/find customer! status: ${response.status} - ${errorBody}`
     );
   }
   return await response.json();
@@ -139,7 +175,11 @@ export const createInvoice = async (invoicePayload: InvoicePayload) => {
     body: JSON.stringify(invoicePayload),
   });
   if (!response.ok) {
-    throw new Error(`Failed to create invoice! status: ${response.status}`);
+    const errorBody = await response.text();
+    console.error("Create invoice API error response:", errorBody);
+    throw new Error(
+      `Failed to create invoice! status: ${response.status} - ${errorBody}`
+    );
   }
   return await response.json();
 };
