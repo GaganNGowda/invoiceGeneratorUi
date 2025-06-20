@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 // Corrected import paths to use the configured path alias '@/'
+// Assuming ChatMessage.tsx and ChatInput.tsx are located directly under 'src/components/'
 import ChatMessage from "@/components/ChatMessage";
-import ChatInput from "@/components/ChatInput"; // Ensure this is the updated ChatInput
+import ChatInput from "@/components/ChatInput";
 import { useToast } from "@/hooks/use-toast";
 import {
   sendChatMessageToBot,
-  // downloadInvoicePdfFrontend, // Not directly used in this component's logic, but kept for import consistency if needed elsewhere
+  downloadInvoicePdfFrontend,
   uploadImageForOcr,
 } from "@/api/zohoService";
 import { Button } from "@/components/ui/button";
@@ -64,28 +65,31 @@ const ChatInterface = () => {
     useState<ConversationContext>({ language: language });
   const SESSION_ID = "my_unique_chat_session";
 
-  // Controls the visibility of the ChatInput
+  // NEW STATE: Controls the visibility of the ChatInput
   const [showChatInput, setShowChatInput] = useState(false);
-
-  // Ref for the ChatInput's internal <input> element
-  const chatInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to reset the chat to its initial state
   const resetChat = () => {
     setMessages([getInitialBotMessage(language)]);
     setConversationContext({ language: language });
     setShowChatInput(false); // Hide chat input on reset
-
-    // Send a reset command to the backend to clear its session state
+    // Also send a reset command to the backend to clear its session state
     sendChatMessageToBot("reset_conversation_command", SESSION_ID, {
       language: language,
     })
       .then(() => {
-        // Optional: toast({ title: "Chat Reset", description: "Conversation successfully reset." });
+        // toast({ // Optional: You might not want a toast for every programmatic reset
+        //   title: "Chat Reset",
+        //   description: "Conversation successfully reset.",
+        // });
       })
       .catch((error) => {
         console.error("Error sending reset command to backend:", error);
-        // Optional: toast({ title: "Reset Error", description: "Failed to reset backend session. Please try again.", variant: "destructive" });
+        // toast({
+        //   title: "Reset Error",
+        //   description: "Failed to reset backend session. Please try again.",
+        //   variant: "destructive",
+        // });
       });
   };
 
@@ -98,22 +102,6 @@ const ChatInterface = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Effect to manage focus on the input field for mobile keypad
-  useEffect(() => {
-    // Only attempt to focus if the input should be visible AND the bot is not typing
-    if (showChatInput && !isTyping) {
-      // Add a small delay to ensure the DOM element is fully rendered and ready for focus.
-      // This is often crucial for mobile browsers.
-      setTimeout(() => {
-        // console.log("Attempting to focus input:", chatInputRef.current); // Good for debugging
-        if (chatInputRef.current) {
-          // Ensure ref has a value before calling focus
-          chatInputRef.current.focus();
-        }
-      }, 200); // Increased delay slightly for mobile reliability, adjust if needed (e.g., 300ms, 500ms)
-    }
-  }, [showChatInput, isTyping, messages.length]); // Dependencies: re-run when input visibility changes, typing stops, or a new message is added
 
   // Helper function to scroll to the bottom of the chat window
   const scrollToBottom = () => {
@@ -138,15 +126,10 @@ const ChatInterface = () => {
       }),
     });
 
-    const initialCommands = [
-      "create invoice",
-      "create customer",
-      "show items",
-      "list items",
-      "what items",
-    ];
+    // If an initial command is sent, show the chat input
+    const initialCommands = ["create invoice", "create customer"];
     if (initialCommands.includes(messageText.toLowerCase().trim())) {
-      setShowChatInput(true); // Show the chat input if an initial command is clicked/typed
+      setShowChatInput(true);
     }
 
     setIsTyping(true); // Show typing indicator
@@ -158,15 +141,12 @@ const ChatInterface = () => {
         { ...conversationContext, language: language }
       );
 
-      // Update conversation context based on backend's response
       if (backendResponse.context) {
         setConversationContext((prev) => ({
           ...backendResponse.context,
           language: prev.language,
         }));
       } else {
-        // If context is not returned, clear it for specific actions indicating flow completion,
-        // but always keep the language.
         if (
           backendResponse.action === "customer_created" ||
           backendResponse.action === "customer_exists" ||
@@ -175,16 +155,15 @@ const ChatInterface = () => {
           backendResponse.action === "invoice_created" ||
           backendResponse.action === "invoice_creation_failed" ||
           backendResponse.action === "invoice_creation_error" ||
-          backendResponse.action === "list_items" // Clearing context after listing items
+          backendResponse.action === "list_items"
         ) {
-          setConversationContext({ language: language }); // Clear context but keep the current language
+          setConversationContext({ language: language });
         }
       }
 
       let botResponseText: React.ReactNode =
         "I'm not sure how to respond to that.";
 
-      // Handle different actions from the backend
       switch (backendResponse.action) {
         case "general_response":
           botResponseText = backendResponse.message;
@@ -227,7 +206,6 @@ const ChatInterface = () => {
           });
           break;
         case "invoice_created":
-          // Construct message with clickable link for PDF download
           if (backendResponse.invoice_id && backendResponse.pdf_url) {
             botResponseText = (
               <>
@@ -273,8 +251,7 @@ const ChatInterface = () => {
           botResponseText = backendResponse.message || "Chat has been reset.";
           // A full reset (including hiding input) is handled by the main resetChat/useEffect
           break;
-        case "file_uploaded": // This action is typically from /upload-document, not /process-ocr
-          // This case might be less relevant now if all image uploads go through OCR
+        case "file_uploaded":
           botResponseText =
             backendResponse.message || `File uploaded successfully.`;
           if (backendResponse.extracted_data) {
@@ -308,7 +285,6 @@ const ChatInterface = () => {
           }`;
       }
 
-      // Add bot's response to the chat
       addMessage({
         id: (Date.now() + 1).toString(),
         text: botResponseText,
@@ -333,7 +309,7 @@ const ChatInterface = () => {
       });
       setConversationContext({ language: language });
     } finally {
-      setIsTyping(false); // This will trigger the focus useEffect
+      setIsTyping(false);
     }
   };
 
@@ -353,8 +329,6 @@ const ChatInterface = () => {
       const ocrResult = await uploadImageForOcr(file, { language: language });
 
       if (ocrResult.text) {
-        setShowChatInput(true); // Show input if OCR extracts text, triggering focus useEffect
-
         addMessage({
           id: (Date.now() + 1).toString(),
           text: `🤖 Extracted from image: "${ocrResult.text}"`,
@@ -393,7 +367,7 @@ const ChatInterface = () => {
         }),
       });
     } finally {
-      setIsTyping(false); // This will trigger the focus useEffect
+      setIsTyping(false);
     }
   };
 
@@ -403,18 +377,10 @@ const ChatInterface = () => {
     setIsTyping(false);
   };
 
-  // Approximate height of ChatInput area including its padding.
-  // Adjust this value if your ChatInput's height changes due to styling.
-  const INPUT_AREA_HEIGHT_PX = 80;
-
   return (
-    <div className="flex flex-col h-screen relative">
-      {" "}
-      {/* Make parent relative for fixed children */}
-      {/* Header - Fixed to top, z-index to stay above content */}
-      <div className="bg-white border-b shadow-sm px-3 py-3 sm:px-4 sm:py-4 z-20">
-        {" "}
-        {/* Increased z-index to ensure it's always on top */}
+    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      {/* Header - Responsive */}
+      <div className="bg-white border-b shadow-sm px-3 py-3 sm:px-4 sm:py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-3">
           <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg flex-shrink-0">
             <span className="text-white font-bold text-xs sm:text-sm">AI</span>
@@ -455,19 +421,32 @@ const ChatInterface = () => {
           </div>
         </div>
       </div>
-      {/* Chat Messages Area */}
-      {/* Add padding-bottom to ensure messages don't get hidden under the fixed input */}
-      <div
-        className={`flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4 transition-all duration-300 ${
-          showChatInput ? `pb-[${INPUT_AREA_HEIGHT_PX}px]` : ""
-        }`}
-        // Using style prop for dynamic pixel values is often more reliable with Tailwind
-        style={{
-          paddingBottom: showChatInput
-            ? `${INPUT_AREA_HEIGHT_PX}px`
-            : undefined,
-        }}
-      >
+
+      {/* Conditional Action Buttons or Chat Input */}
+      {/* If chat input is not shown, display the action buttons */}
+      {!showChatInput && (
+        <div className="max-w-4xl mx-auto w-full px-2 py-2 sm:px-4 sm:py-3 flex justify-center gap-2 sm:gap-4">
+          <Button
+            variant="outline"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            onClick={() => handleSendMessage("create invoice")}
+            disabled={isTyping}
+          >
+            Create Invoice
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            onClick={() => handleSendMessage("create customer")}
+            disabled={isTyping}
+          >
+            Create Customer
+          </Button>
+        </div>
+      )}
+
+      {/* Chat Messages - Responsive scrolling */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
             <ChatMessage
@@ -507,45 +486,14 @@ const ChatInterface = () => {
           <div ref={messagesEndRef} />
         </div>
       </div>
-      {/* Conditional Action Buttons or Chat Input */}
-      {!showChatInput && (
-        // flex-grow and justify-center will center these buttons in the middle
-        // of the available vertical space if messages are short.
-        <div className="flex-grow flex items-center justify-center p-4">
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 max-w-sm w-full">
-            <Button
-              variant="outline"
-              className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-              onClick={() => handleSendMessage("create invoice")}
-              disabled={isTyping}
-            >
-              Create Invoice
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-              onClick={() => handleSendMessage("create customer")}
-              disabled={isTyping}
-            >
-              Create Customer
-            </Button>
-          </div>
-        </div>
-      )}
+
       {/* Chat Input - Fixed at bottom, only shown if showChatInput is true */}
       {showChatInput && (
-        <div
-          className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-20"
-          // Consider adding padding for iOS safe area (notch, gesture bar)
-          // style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-        >
-          <ChatInput
-            ref={chatInputRef}
-            onSendMessage={handleSendMessage}
-            onFileUpload={handleFileUpload}
-            disabled={isTyping}
-          />
-        </div>
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          onFileUpload={handleFileUpload}
+          disabled={isTyping}
+        />
       )}
     </div>
   );
