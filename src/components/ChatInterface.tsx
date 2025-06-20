@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 // Corrected import paths to use the configured path alias '@/'
 // Assuming ChatMessage.tsx and ChatInput.tsx are located directly under 'src/components/'
 import ChatMessage from "@/components/ChatMessage";
-import ChatInput from "@/components/ChatInput";
+import ChatInput from "@/components/ChatInput"; // Ensure this is the updated ChatInput
 import { useToast } from "@/hooks/use-toast";
 import {
   sendChatMessageToBot,
@@ -65,31 +65,35 @@ const ChatInterface = () => {
     useState<ConversationContext>({ language: language });
   const SESSION_ID = "my_unique_chat_session";
 
-  // NEW STATE: Controls the visibility of the ChatInput
   const [showChatInput, setShowChatInput] = useState(false);
+
+  // >>> NEW: Create a ref for the ChatInput component <<<
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to reset the chat to its initial state
   const resetChat = () => {
     setMessages([getInitialBotMessage(language)]);
     setConversationContext({ language: language });
     setShowChatInput(false); // Hide chat input on reset
-    // Also send a reset command to the backend to clear its session state
+    // No need to focus here as the input might be hidden
+
     sendChatMessageToBot("reset_conversation_command", SESSION_ID, {
       language: language,
     })
       .then(() => {
-        // toast({ // Optional: You might not want a toast for every programmatic reset
-        //   title: "Chat Reset",
-        //   description: "Conversation successfully reset.",
-        // });
+        toast({
+          // Optional: You might not want a toast for every programmatic reset
+          title: "Chat Reset",
+          description: "Conversation successfully reset.",
+        });
       })
       .catch((error) => {
         console.error("Error sending reset command to backend:", error);
-        // toast({
-        //   title: "Reset Error",
-        //   description: "Failed to reset backend session. Please try again.",
-        //   variant: "destructive",
-        // });
+        toast({
+          title: "Reset Error",
+          description: "Failed to reset backend session. Please try again.",
+          variant: "destructive",
+        });
       });
   };
 
@@ -102,6 +106,19 @@ const ChatInterface = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // >>> NEW: Effect to manage focus on the input field <<<
+  useEffect(() => {
+    // Only attempt to focus if the input should be visible AND the bot is not typing
+    if (showChatInput && !isTyping) {
+      // Add a small delay to ensure the DOM element is fully rendered and ready to be focused.
+      // This is often necessary for mobile browsers.
+      setTimeout(() => {
+        // console.log("Attempting to focus input:", chatInputRef.current); // Good for debugging
+        chatInputRef.current?.focus(); // Programmatically focus the input
+      }, 100); // Adjust delay if needed (e.g., 50ms, 200ms)
+    }
+  }, [showChatInput, isTyping, messages.length]); // Dependencies: re-run when input visibility changes, typing stops, or a new message is added
 
   // Helper function to scroll to the bottom of the chat window
   const scrollToBottom = () => {
@@ -126,7 +143,6 @@ const ChatInterface = () => {
       }),
     });
 
-    // If an initial command is sent, show the chat input
     const initialCommands = ["create invoice", "create customer"];
     if (initialCommands.includes(messageText.toLowerCase().trim())) {
       setShowChatInput(true);
@@ -309,7 +325,7 @@ const ChatInterface = () => {
       });
       setConversationContext({ language: language });
     } finally {
-      setIsTyping(false);
+      setIsTyping(false); // This state change will trigger the focus useEffect
     }
   };
 
@@ -329,6 +345,8 @@ const ChatInterface = () => {
       const ocrResult = await uploadImageForOcr(file, { language: language });
 
       if (ocrResult.text) {
+        setShowChatInput(true); // Show input if OCR extracts text, triggering focus useEffect
+
         addMessage({
           id: (Date.now() + 1).toString(),
           text: `🤖 Extracted from image: "${ocrResult.text}"`,
@@ -367,14 +385,14 @@ const ChatInterface = () => {
         }),
       });
     } finally {
-      setIsTyping(false);
+      setIsTyping(false); // This state change will trigger the focus useEffect
     }
   };
 
   const handleResetChat = async () => {
     setIsTyping(true);
     resetChat(); // Calls the consolidated reset function
-    setIsTyping(false);
+    setIsTyping(false); // This state change will trigger the focus useEffect (if input becomes visible)
   };
 
   return (
@@ -422,29 +440,6 @@ const ChatInterface = () => {
         </div>
       </div>
 
-      {/* Conditional Action Buttons or Chat Input */}
-      {/* If chat input is not shown, display the action buttons */}
-      {!showChatInput && (
-        <div className="max-w-4xl mx-auto w-full px-2 py-2 sm:px-4 sm:py-3 flex justify-center gap-2 sm:gap-4">
-          <Button
-            variant="outline"
-            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-            onClick={() => handleSendMessage("create invoice")}
-            disabled={isTyping}
-          >
-            Create Invoice
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-            onClick={() => handleSendMessage("create customer")}
-            disabled={isTyping}
-          >
-            Create Customer
-          </Button>
-        </div>
-      )}
-
       {/* Chat Messages - Responsive scrolling */}
       <div className="flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4">
         <div className="max-w-4xl mx-auto">
@@ -487,9 +482,32 @@ const ChatInterface = () => {
         </div>
       </div>
 
-      {/* Chat Input - Fixed at bottom, only shown if showChatInput is true */}
+      {/* Conditional Action Buttons or Chat Input */}
+      {!showChatInput && (
+        <div className="max-w-4xl mx-auto w-full px-2 py-2 sm:px-4 sm:py-3 flex justify-center gap-2 sm:gap-4">
+          <Button
+            variant="outline"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            onClick={() => handleSendMessage("create invoice")}
+            disabled={isTyping}
+          >
+            Create Invoice
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            onClick={() => handleSendMessage("create customer")}
+            disabled={isTyping}
+          >
+            Create Customer
+          </Button>
+        </div>
+      )}
+
       {showChatInput && (
+        // >>> Pass the chatInputRef here to the ChatInput component <<<
         <ChatInput
+          ref={chatInputRef}
           onSendMessage={handleSendMessage}
           onFileUpload={handleFileUpload}
           disabled={isTyping}
