@@ -1,6 +1,6 @@
 // src/api/zohoService.ts
 
-const BACKEND_BASE_URL = "http://localhost:8000";
+const BACKEND_BASE_URL = "https://invoice-generator-4zyo.onrender.com";
 
 interface CustomerPayload {
   contact_name: string;
