@@ -323,7 +323,7 @@ const ChatInterface = () => {
         minute: "2-digit",
       }),
     });
-    setIsTyping(true);
+    setTimeout(() => setIsTyping(true), 10);
 
     try {
       const ocrResult = await uploadImageForOcr(file, { language: language });
@@ -378,9 +378,9 @@ const ChatInterface = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="flex flex-col h-[100dvh] bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header - Responsive */}
-      <div className="bg-white border-b shadow-sm px-3 py-3 sm:px-4 sm:py-4">
+      <div className="bg-white border-b shadow-sm px-3 py-3 sm:px-4 sm:py-4 pt-[env(safe-area-inset-top)]">
         <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-3">
           <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg flex-shrink-0">
             <span className="text-white font-bold text-xs sm:text-sm">AI</span>
@@ -446,7 +446,7 @@ const ChatInterface = () => {
       )}
 
       {/* Chat Messages - Responsive scrolling */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-2 py-3 sm:px-4 sm:py-4">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
             <ChatMessage

@@ -42,14 +42,6 @@ const ChatInput = ({
     }
   };
 
-  // Effect to re-focus the input when it becomes enabled
-  // This is useful if the input was disabled (e.g., during bot typing) and then re-enabled.
-  useEffect(() => {
-    if (inputRef.current && !disabled) {
-      inputRef.current.focus();
-    }
-  }, [disabled]); // Re-run this effect when the 'disabled' prop changes
-
   return (
     <div className="border-t bg-white p-3 sm:p-4 shadow-lg safe-area-inset-bottom">
       <div className="flex items-end gap-2 sm:gap-3 max-w-4xl mx-auto">
@@ -76,12 +68,12 @@ const ChatInput = ({
         {/* Input Field */}
         <div className="flex-1 relative min-w-0">
           <Input
-            ref={inputRef} // Attach the ref to your Input component
+            ref={inputRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Type your message about invoices..."
-            disabled={disabled}
+            readOnly={disabled} // ✅ Changed from 'disabled'
             className="pr-3 rounded-full border-2 border-gray-200 focus:border-purple-300 focus:ring-purple-100 py-2.5 sm:py-3 text-sm sm:text-base resize-none"
           />
         </div>
