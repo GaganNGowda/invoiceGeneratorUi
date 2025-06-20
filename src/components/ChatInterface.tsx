@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from "react";
+// Corrected import paths to use the configured path alias '@/'
+// Assuming ChatMessage.tsx and ChatInput.tsx are located directly under 'src/components/'
 import ChatMessage from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import { useToast } from "@/hooks/use-toast";
 import {
   sendChatMessageToBot,
-  downloadInvoicePdfFrontend, // Keep if still needed for direct download action
-  uploadImageForOcr, // New import for OCR specific upload
+  downloadInvoicePdfFrontend,
+  uploadImageForOcr,
 } from "@/api/zohoService";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
@@ -54,35 +56,47 @@ const getInitialBotMessage = (lang: "en" | "kn"): Message => {
 };
 
 const ChatInterface = () => {
-  // State for the current language, defaulting to Kannada ('kn')
   const [language, setLanguage] = useState<"en" | "kn">("kn");
-
-  // State to manage chat messages, initialized as an empty array
   const [messages, setMessages] = useState<Message[]>([]);
-
-  // Effect to initialize/reset messages and context on mount and language change
-  useEffect(() => {
-    resetChat(); // Call resetChat on mount and language change
-  }, [language]);
-
-  // State to indicate if the bot is "typing" (processing a response)
   const [isTyping, setIsTyping] = useState(false);
-  // Ref for scrolling messages into view
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  // Toast hook for notifications
   const { toast } = useToast();
-
-  // State to maintain conversation context
   const [conversationContext, setConversationContext] =
     useState<ConversationContext>({ language: language });
-  // Unique session ID for the conversation
   const SESSION_ID = "my_unique_chat_session";
+
+  // NEW STATE: Controls the visibility of the ChatInput
+  const [showChatInput, setShowChatInput] = useState(false);
 
   // Helper function to reset the chat to its initial state
   const resetChat = () => {
     setMessages([getInitialBotMessage(language)]);
     setConversationContext({ language: language });
+    setShowChatInput(false); // Hide chat input on reset
+    // Also send a reset command to the backend to clear its session state
+    sendChatMessageToBot("reset_conversation_command", SESSION_ID, {
+      language: language,
+    })
+      .then(() => {
+        // toast({ // Optional: You might not want a toast for every programmatic reset
+        //   title: "Chat Reset",
+        //   description: "Conversation successfully reset.",
+        // });
+      })
+      .catch((error) => {
+        console.error("Error sending reset command to backend:", error);
+        // toast({
+        //   title: "Reset Error",
+        //   description: "Failed to reset backend session. Please try again.",
+        //   variant: "destructive",
+        // });
+      });
   };
+
+  // Effect to initialize/reset messages and context on mount and language change
+  useEffect(() => {
+    resetChat(); // Call resetChat on mount and language change
+  }, [language]);
 
   // Effect to scroll to the bottom of the chat when new messages are added
   useEffect(() => {
@@ -112,32 +126,27 @@ const ChatInterface = () => {
       }),
     });
 
-    // **Check for "create invoice" and reset if needed**
-    if (messageText.toLowerCase().trim() === "reset") {
-      resetChat();
-      return; // Early return to prevent sending "create invoice" to backend
+    // If an initial command is sent, show the chat input
+    const initialCommands = ["create invoice", "create customer"];
+    if (initialCommands.includes(messageText.toLowerCase().trim())) {
+      setShowChatInput(true);
     }
 
     setIsTyping(true); // Show typing indicator
 
     try {
-      // Send message to the backend's main conversational endpoint, including the current language
       const backendResponse = await sendChatMessageToBot(
         messageText,
         SESSION_ID,
         { ...conversationContext, language: language }
       );
 
-      // Update conversation context based on backend's response
       if (backendResponse.context) {
-        // Preserve the language from the frontend state when updating context from backend
         setConversationContext((prev) => ({
           ...backendResponse.context,
           language: prev.language,
         }));
       } else {
-        // If context is not returned, clear it for specific actions indicating flow completion,
-        // but always keep the language.
         if (
           backendResponse.action === "customer_created" ||
           backendResponse.action === "customer_exists" ||
@@ -148,14 +157,13 @@ const ChatInterface = () => {
           backendResponse.action === "invoice_creation_error" ||
           backendResponse.action === "list_items"
         ) {
-          setConversationContext({ language: language }); // Clear context but keep the current language
+          setConversationContext({ language: language });
         }
       }
 
       let botResponseText: React.ReactNode =
         "I'm not sure how to respond to that.";
 
-      // Handle different actions from the backend
       switch (backendResponse.action) {
         case "general_response":
           botResponseText = backendResponse.message;
@@ -166,7 +174,7 @@ const ChatInterface = () => {
         case "ask_question":
           botResponseText = backendResponse.message;
           break;
-        case "request_invoice_info": // This action might not be explicitly returned by the backend logic, but keep for robustness
+        case "request_invoice_info":
           botResponseText = backendResponse.message;
           break;
         case "customer_created":
@@ -198,7 +206,6 @@ const ChatInterface = () => {
           });
           break;
         case "invoice_created":
-          // Construct message with clickable link for PDF download
           if (backendResponse.invoice_id && backendResponse.pdf_url) {
             botResponseText = (
               <>
@@ -210,7 +217,6 @@ const ChatInterface = () => {
                   download={`invoice_${backendResponse.invoice_id}.pdf`}
                   className="text-blue-500 hover:text-blue-700 underline cursor-pointer"
                   onClick={(e) => {
-                    // This onClick is for user feedback, actual download is by href+download
                     toast({
                       title: "Initiating Download",
                       description: `Invoice PDF for ${backendResponse.invoice_id} should start downloading.`,
@@ -243,10 +249,9 @@ const ChatInterface = () => {
           break;
         case "reset_success":
           botResponseText = backendResponse.message || "Chat has been reset.";
-          resetChat(); // Reset the chat on reset_success from backend
+          // A full reset (including hiding input) is handled by the main resetChat/useEffect
           break;
-        case "file_uploaded": // This action is typically from /upload-document, not /process-ocr
-          // This case might be less relevant now if all image uploads go through OCR
+        case "file_uploaded":
           botResponseText =
             backendResponse.message || `File uploaded successfully.`;
           if (backendResponse.extracted_data) {
@@ -280,7 +285,6 @@ const ChatInterface = () => {
           }`;
       }
 
-      // Add bot's response to the chat
       addMessage({
         id: (Date.now() + 1).toString(),
         text: botResponseText,
@@ -309,7 +313,6 @@ const ChatInterface = () => {
     }
   };
 
-  // Handles file uploads, specifically for OCR processing
   const handleFileUpload = async (file: File) => {
     addMessage({
       id: Date.now().toString(),
@@ -320,36 +323,26 @@ const ChatInterface = () => {
         minute: "2-digit",
       }),
     });
-    setIsTyping(true); // Show typing indicator
+    setIsTyping(true);
 
     try {
-      // Call the new OCR specific upload function
-      const ocrResult = await uploadImageForOcr(file);
+      const ocrResult = await uploadImageForOcr(file, { language: language });
 
       if (ocrResult.text) {
-        // Step 1: Add the extracted text as a "bot" message initially,
-        // then immediately process it as if the user sent it.
-        // This gives feedback that text was extracted.
         addMessage({
           id: (Date.now() + 1).toString(),
           text: `🤖 Extracted from image: "${ocrResult.text}"`,
-          isBot: true, // Display as bot message
+          isBot: true,
           timestamp: new Date().toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           }),
         });
 
-        // Step 2: Now, "send" this extracted text as if the user typed it.
-        // This will trigger the main conversational flow in handleSendMessage.
-        // Pass the extracted text to handleSendMessage.
-        // We need to delay this slightly to ensure the "extracted from image" message renders first.
-        // A direct call might process too fast.
         setTimeout(() => {
           handleSendMessage(ocrResult.text);
-        }, 100); // Small delay to allow UI to update
+        }, 100);
       } else {
-        // If no text was extracted, inform the user
         addMessage({
           id: (Date.now() + 1).toString(),
           text: `❌ No text could be extracted from "${file.name}". Please try another image or type your request.`,
@@ -374,53 +367,14 @@ const ChatInterface = () => {
         }),
       });
     } finally {
-      setIsTyping(false); // Hide typing indicator
+      setIsTyping(false);
     }
   };
 
-  // Handles resetting the chat conversation
   const handleResetChat = async () => {
     setIsTyping(true);
-    try {
-      // Send a special command to the backend to reset its session state
-      const backendResponse = await sendChatMessageToBot(
-        "reset_conversation_command",
-        SESSION_ID,
-        { language: language }
-      );
-
-      // Check if backend confirmed reset
-      if (backendResponse.action === "reset_success") {
-        resetChat(); // Reset the chat on successful backend reset
-        toast({
-          title: "Chat Reset",
-          description:
-            backendResponse.message || "Conversation successfully reset.",
-        });
-      } else {
-        // If backend reset failed, still clear frontend for a fresh start
-        toast({
-          title: "Reset Failed",
-          description:
-            backendResponse.message ||
-            "Failed to reset conversation on the backend. Clearing local chat.",
-          variant: "destructive",
-        });
-        resetChat(); // Reset the chat even if backend reset fails
-      }
-    } catch (error: any) {
-      // Handle network or other errors during reset attempt
-      console.error("Error resetting chat with backend:", error);
-      toast({
-        title: "Reset Error",
-        description:
-          "Could not communicate with backend to reset. Local chat cleared.",
-        variant: "destructive",
-      });
-      resetChat(); // Reset the chat on communication error
-    } finally {
-      setIsTyping(false);
-    }
+    resetChat(); // Calls the consolidated reset function
+    setIsTyping(false);
   };
 
   return (
@@ -439,13 +393,14 @@ const ChatInterface = () => {
               AI-powered invoice assistant
             </p>
           </div>
+          {/* Language Selector */}
           <div className="flex-shrink-0">
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as "en" | "kn")}
               className="px-2 py-1 sm:px-3 sm:py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 focus:ring-blue-500 focus:border-blue-500"
               aria-label="Select Language"
-              disabled={isTyping} // Disable language selection while bot is typing
+              disabled={isTyping}
             >
               <option value="en">English</option>
               <option value="kn">ಕನ್ನಡ (Kannada)</option>
@@ -466,6 +421,29 @@ const ChatInterface = () => {
           </div>
         </div>
       </div>
+
+      {/* Conditional Action Buttons or Chat Input */}
+      {/* If chat input is not shown, display the action buttons */}
+      {!showChatInput && (
+        <div className="max-w-4xl mx-auto w-full px-2 py-2 sm:px-4 sm:py-3 flex justify-center gap-2 sm:gap-4">
+          <Button
+            variant="outline"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            onClick={() => handleSendMessage("create invoice")}
+            disabled={isTyping}
+          >
+            Create Invoice
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            onClick={() => handleSendMessage("create customer")}
+            disabled={isTyping}
+          >
+            Create Customer
+          </Button>
+        </div>
+      )}
 
       {/* Chat Messages - Responsive scrolling */}
       <div className="flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4">
@@ -509,12 +487,14 @@ const ChatInterface = () => {
         </div>
       </div>
 
-      {/* Chat Input - Fixed at bottom */}
-      <ChatInput
-        onSendMessage={handleSendMessage}
-        onFileUpload={handleFileUpload} // Ensure ChatInput passes the file directly
-        disabled={isTyping}
-      />
+      {/* Chat Input - Fixed at bottom, only shown if showChatInput is true */}
+      {showChatInput && (
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          onFileUpload={handleFileUpload}
+          disabled={isTyping}
+        />
+      )}
     </div>
   );
 };
