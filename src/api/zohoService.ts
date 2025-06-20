@@ -1,6 +1,6 @@
 // src/api/zohoService.ts
 
-const BACKEND_BASE_URL = "https://invoice-generator-4zyo.onrender.com"; // Ensure this matches your backend's URL and port
+const BACKEND_BASE_URL = "http://localhost:8000";
 
 interface CustomerPayload {
   contact_name: string;
@@ -87,13 +87,13 @@ export const uploadFileToBackend = async (file: File) => {
 };
 
 /**
- * NEW FUNCTION: Uploads an image file to the backend for OCR processing.
+ * Uploads an image file to the backend for OCR processing.
  * This function specifically targets the /process-ocr endpoint.
  * @param file The image file to upload.
  * @returns A promise that resolves to the JSON response from the backend,
  * expected to contain the 'text' extracted by OCR.
  */
-export const uploadImageForOcr = async (file: File) => {
+export const uploadImageForOcr = async (file: File, language) => {
   const formData = new FormData();
   formData.append("file", file); // 'file' matches the FastAPI UploadFile parameter name
 

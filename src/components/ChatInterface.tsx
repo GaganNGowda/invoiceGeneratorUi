@@ -1,12 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-// Corrected import paths to use the configured path alias '@/'
-// Assuming ChatMessage.tsx and ChatInput.tsx are located directly under 'src/components/'
 import ChatMessage from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import { useToast } from "@/hooks/use-toast";
 import {
   sendChatMessageToBot,
-  // Removed direct uploadFileToBackend here as we'll use a specific OCR one
   downloadInvoicePdfFrontend, // Keep if still needed for direct download action
   uploadImageForOcr, // New import for OCR specific upload
 } from "@/api/zohoService";
@@ -17,7 +14,7 @@ import React from "react";
 // Define the message interface for consistent structure
 interface Message {
   id: string;
-  text: React.ReactNode; // Can be string or JSX for rich content
+  text: React.ReactNode;
   isBot: boolean;
   timestamp: string;
 }
@@ -28,30 +25,46 @@ interface ConversationContext {
   next_field?: string;
   customer_data?: { [key: string]: string };
   invoice_data?: { [key: string]: any };
-  all_available_items?: any[]; // Added for consistency with backend context
+  all_available_items?: any[];
   current_item_id?: string;
   current_item_name?: string;
   invoice_collection_sub_status?: string;
   return_flow?: string;
   return_phone?: string;
   return_invoice_data?: { [key: string]: any };
-  extracted_contact_info?: { [key: string]: any }; // Added for clarity on frontend context
+  extracted_contact_info?: { [key: string]: any };
+  language?: "en" | "kn";
 }
 
-const ChatInterface = () => {
-  // Initial message displayed when the chat starts or is reset
-  const initialBotMessage: Message = {
+// Function to get the initial bot message based on language
+const getInitialBotMessage = (lang: "en" | "kn"): Message => {
+  const messages = {
+    en: "Hello! I'm your Invoice Generator AI assistant. How can I assist you today?",
+    kn: "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ ಇನ್‌ವಾಯ್ಸ್ ಜನರೇಟರ್ AI ಸಹಾಯಕ. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?",
+  };
+  return {
     id: "1",
-    text: "Hello! I'm your Invoice Generator AI assistant. I can help you create, analyze, and manage invoices. How can I assist you today?",
+    text: messages[lang],
     isBot: true,
     timestamp: new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     }),
   };
+};
 
-  // State to manage chat messages
-  const [messages, setMessages] = useState<Message[]>([initialBotMessage]);
+const ChatInterface = () => {
+  // State for the current language, defaulting to Kannada ('kn')
+  const [language, setLanguage] = useState<"en" | "kn">("kn");
+
+  // State to manage chat messages, initialized as an empty array
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  // Effect to initialize/reset messages and context on mount and language change
+  useEffect(() => {
+    resetChat(); // Call resetChat on mount and language change
+  }, [language]);
+
   // State to indicate if the bot is "typing" (processing a response)
   const [isTyping, setIsTyping] = useState(false);
   // Ref for scrolling messages into view
@@ -59,11 +72,17 @@ const ChatInterface = () => {
   // Toast hook for notifications
   const { toast } = useToast();
 
-  // State to maintain conversation context (e.g., current step in a multi-turn flow)
+  // State to maintain conversation context
   const [conversationContext, setConversationContext] =
-    useState<ConversationContext>({});
-  // Unique session ID for the conversation (can be dynamic for multi-user apps)
+    useState<ConversationContext>({ language: language });
+  // Unique session ID for the conversation
   const SESSION_ID = "my_unique_chat_session";
+
+  // Helper function to reset the chat to its initial state
+  const resetChat = () => {
+    setMessages([getInitialBotMessage(language)]);
+    setConversationContext({ language: language });
+  };
 
   // Effect to scroll to the bottom of the chat when new messages are added
   useEffect(() => {
@@ -92,21 +111,33 @@ const ChatInterface = () => {
         minute: "2-digit",
       }),
     });
+
+    // **Check for "create invoice" and reset if needed**
+    if (messageText.toLowerCase().trim() === "reset") {
+      resetChat();
+      return; // Early return to prevent sending "create invoice" to backend
+    }
+
     setIsTyping(true); // Show typing indicator
 
     try {
-      // Send message to the backend's main conversational endpoint
+      // Send message to the backend's main conversational endpoint, including the current language
       const backendResponse = await sendChatMessageToBot(
         messageText,
         SESSION_ID,
-        conversationContext // Pass current conversation context
+        { ...conversationContext, language: language }
       );
 
       // Update conversation context based on backend's response
       if (backendResponse.context) {
-        setConversationContext(backendResponse.context);
+        // Preserve the language from the frontend state when updating context from backend
+        setConversationContext((prev) => ({
+          ...backendResponse.context,
+          language: prev.language,
+        }));
       } else {
-        // If context is not returned, clear it for specific actions indicating flow completion
+        // If context is not returned, clear it for specific actions indicating flow completion,
+        // but always keep the language.
         if (
           backendResponse.action === "customer_created" ||
           backendResponse.action === "customer_exists" ||
@@ -115,9 +146,9 @@ const ChatInterface = () => {
           backendResponse.action === "invoice_created" ||
           backendResponse.action === "invoice_creation_failed" ||
           backendResponse.action === "invoice_creation_error" ||
-          backendResponse.action === "list_items" // Clearing context after listing items
+          backendResponse.action === "list_items"
         ) {
-          setConversationContext({}); // Clear context to start fresh
+          setConversationContext({ language: language }); // Clear context but keep the current language
         }
       }
 
@@ -212,7 +243,7 @@ const ChatInterface = () => {
           break;
         case "reset_success":
           botResponseText = backendResponse.message || "Chat has been reset.";
-          setMessages([initialBotMessage]); // Clear all messages and show initial bot message
+          resetChat(); // Reset the chat on reset_success from backend
           break;
         case "file_uploaded": // This action is typically from /upload-document, not /process-ocr
           // This case might be less relevant now if all image uploads go through OCR
@@ -272,15 +303,14 @@ const ChatInterface = () => {
           minute: "2-digit",
         }),
       });
-      setConversationContext({}); // Clear context on communication error
+      setConversationContext({ language: language });
     } finally {
-      setIsTyping(false); // Hide typing indicator
+      setIsTyping(false);
     }
   };
 
   // Handles file uploads, specifically for OCR processing
   const handleFileUpload = async (file: File) => {
-    // Add user's "uploading" message to chat
     addMessage({
       id: Date.now().toString(),
       text: `📎 Uploading and processing: ${file.name}...`,
@@ -350,19 +380,18 @@ const ChatInterface = () => {
 
   // Handles resetting the chat conversation
   const handleResetChat = async () => {
-    setIsTyping(true); // Show typing indicator
+    setIsTyping(true);
     try {
       // Send a special command to the backend to reset its session state
       const backendResponse = await sendChatMessageToBot(
         "reset_conversation_command",
         SESSION_ID,
-        {} // No context needed for reset command
+        { language: language }
       );
 
       // Check if backend confirmed reset
       if (backendResponse.action === "reset_success") {
-        setMessages([initialBotMessage]); // Clear all messages except initial bot message
-        setConversationContext({}); // Clear frontend context
+        resetChat(); // Reset the chat on successful backend reset
         toast({
           title: "Chat Reset",
           description:
@@ -377,8 +406,7 @@ const ChatInterface = () => {
             "Failed to reset conversation on the backend. Clearing local chat.",
           variant: "destructive",
         });
-        setMessages([initialBotMessage]);
-        setConversationContext({});
+        resetChat(); // Reset the chat even if backend reset fails
       }
     } catch (error: any) {
       // Handle network or other errors during reset attempt
@@ -389,10 +417,9 @@ const ChatInterface = () => {
           "Could not communicate with backend to reset. Local chat cleared.",
         variant: "destructive",
       });
-      setMessages([initialBotMessage]); // Clear local chat
-      setConversationContext({}); // Clear local context
+      resetChat(); // Reset the chat on communication error
     } finally {
-      setIsTyping(false); // Hide typing indicator
+      setIsTyping(false);
     }
   };
 
@@ -411,6 +438,18 @@ const ChatInterface = () => {
             <p className="text-xs sm:text-sm text-gray-500 truncate">
               AI-powered invoice assistant
             </p>
+          </div>
+          <div className="flex-shrink-0">
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as "en" | "kn")}
+              className="px-2 py-1 sm:px-3 sm:py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 focus:ring-blue-500 focus:border-blue-500"
+              aria-label="Select Language"
+              disabled={isTyping} // Disable language selection while bot is typing
+            >
+              <option value="en">English</option>
+              <option value="kn">ಕನ್ನಡ (Kannada)</option>
+            </select>
           </div>
           <Button
             variant="outline"
