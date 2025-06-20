@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef, Ref } from "react"; // Import forwardRef and Ref
+import { useState, useRef, useEffect, forwardRef, Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Upload, Send } from "lucide-react";
@@ -10,33 +10,33 @@ interface ChatInputProps {
   disabled?: boolean;
 }
 
-// Convert to a functional component that forwards a ref
 const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
   ({ onSendMessage, onFileUpload, disabled }, ref: Ref<HTMLInputElement>) => {
-    // Accept the forwarded ref
     const [message, setMessage] = useState("");
-    const fileInputRef = useRef<HTMLInputElement>(null); // Ref for the hidden file input
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Effect to focus the input field
-    // This will run when the component mounts, when `disabled` state changes,
-    // or when `message` is cleared (after send).
+    // This effect runs when disabled status changes or when the message state changes (e.g., after clearing)
     useEffect(() => {
-      // Ensure the input exists and is not disabled before attempting to focus
-      if (
-        ref &&
-        (ref as React.MutableRefObject<HTMLInputElement>).current &&
-        !disabled
-      ) {
-        (ref as React.MutableRefObject<HTMLInputElement>).current.focus();
+      const inputElement = (ref as React.MutableRefObject<HTMLInputElement>)
+        ?.current;
+      if (inputElement && !disabled) {
+        // Use a slight delay to ensure the DOM has updated and is ready to receive focus,
+        // especially after a state change that might re-render.
+        setTimeout(() => {
+          inputElement.focus();
+          // Optional: On some mobile browsers, selecting the text can also help keep keyboard open
+          // inputElement.setSelectionRange(inputElement.value.length, inputElement.value.length);
+        }, 50); // Small delay
       }
-    }, [disabled, message, ref]); // Add `message` and `ref` to dependencies
+    }, [disabled, message, ref]); // Added `message` and `ref` to dependencies
 
     const handleSend = () => {
-      if (message.trim() && !disabled) {
-        onSendMessage(message.trim());
-        setMessage(""); // Clear the message input
-        // The useEffect above will handle focusing after `setMessage("")` causes a re-render.
-        // No explicit focus call needed here if useEffect handles it.
+      const trimmedMessage = message.trim();
+      if (trimmedMessage && !disabled) {
+        onSendMessage(trimmedMessage);
+        setMessage(""); // <--- This line is responsible for clearing the input's state
+        // The useEffect above will handle the focus due to `message` state change
       }
     };
 
@@ -51,7 +51,7 @@ const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
       const file = e.target.files?.[0];
       if (file) {
         onFileUpload(file);
-        e.target.value = ""; // Clear the file input selection
+        e.target.value = ""; // Clear the file input selection for next upload
       }
     };
 
@@ -82,12 +82,15 @@ const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
           {/* Input Field */}
           <div className="flex-1 relative min-w-0">
             <Input
-              ref={ref} // *** This is the key: attach the forwarded ref to your Input component ***
-              value={message}
+              ref={ref} // *** Pass the forwarded ref here to your Input component ***
+              value={message} // *** Input value is controlled by 'message' state ***
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type your message about invoices..."
               disabled={disabled}
+              // Add inputMode for better mobile keyboard hints
+              type="text" // Ensure it's text type
+              inputMode="text" // Suggest a regular text keyboard
               className="pr-3 rounded-full border-2 border-gray-200 focus:border-purple-300 focus:ring-purple-100 py-2.5 sm:py-3 text-sm sm:text-base resize-none"
             />
           </div>
@@ -112,5 +115,5 @@ const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
   }
 );
 
-ChatInput.displayName = "ChatInput"; // Good for React DevTools
+ChatInput.displayName = "ChatInput";
 export default ChatInput;
